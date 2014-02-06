@@ -2,6 +2,7 @@ import re
 import os
 import commands
 import json
+import tempfile
 
 class Platform():
   def __init__(self):
@@ -42,9 +43,40 @@ class Platform():
       return "debian"
 
   def install(self, pkg):
-    install_cmd=self.pkglocalprovider() + ' /tmp/' + pkg + '*' + self.getpkgarch() + '*.' + self.getpkgextension()
+    install_cmd=self.pkglocalprovider() + ' ' + tmp_dir + pkg + '*' + self.getpkgarch() + '*.' + self.getpkgextension()
     if not os.system(install_cmd) == 0:
       print install_cmd, 'failed'
 
-me = Platform()
-me.install("atop")
+
+class Buildins():
+  def __init__(self):
+    self.platform = Platform()
+    if os.path.isfile('/etc/fuel-uuid'):
+      self.hostname = 'localhost'
+    else:
+      self.hostname = self.platform.raw_data['hostname']
+    print(self.hostname)
+
+  def simplecmd(self, *args):
+    print 'going to run', args
+
+class Nodes():
+  def __init__(self):
+    self.raw_data = json.loads(commands.getoutput('fuel --json node'))
+    self.nodes = []
+    os.system('cp ' + __file__ + ' ' + tmp_dir)
+    for n in self.raw_data:
+      self.nodes.append(n['fqdn'])
+      print 'scp -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + tmp_dir
+
+#me = Platform()
+#me.install("atop")
+
+if len(sys.argv) == 1:
+#i'm controller
+extract()
+pool = Nodes()
+print pool.nodes
+else:
+#i'm target
+b = Buildins()
