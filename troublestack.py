@@ -4,6 +4,15 @@ import commands
 import json
 import tempfile
 import sys
+import subprocess
+import threading
+import signal
+
+class Alarm(Exception):
+    pass
+
+def alarm_handler(signum, frame):
+    raise Alarm
 
 class Platform():
   def __init__(self):
@@ -43,7 +52,7 @@ class Platform():
     else:
       return "debian"
 
-  def install(self, pkg):
+  def localinstall(self, pkg):
     install_cmd=self.pkglocalprovider() + ' ' + tmp_dir + pkg + '*' + self.getpkgarch() + '*.' + self.getpkgextension()
     if not os.system(install_cmd) == 0:
       print install_cmd, 'failed'
@@ -56,13 +65,27 @@ class Buildins():
       self.hostname = 'localhost'
     else:
       self.hostname = self.platform.raw_data['hostname']
-    print(self.hostname)
+    #print(self.hostname)
 
-  def simplecmd(self, *args):
-    print 'going to run', args
+  def simplecmd(self, timeout, cmd):
+    print 'going to run', cmd, timeout
+    logfile = re.sub('[^a-zA-Z0-9]', '_', cmd)
+    logfd = open(target_dir + logfile,'w')
+    running = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=logfd, shell=True)
+    signal.signal(signal.SIGALRM, alarm_handler)
+    signal.alarm(int(timeout))
+    try:
+      errcode = running.wait()
+      signal.alarm(0)
+      logfd.write(str(cmd) + ' exit with ' + str(errcode))
+      logfd.close()
+    except Alarm:
+     logfd.write(str(cmd) + ' exceed timeout ' + timeout)
+     logfd.close()
 
-  def install(self, pkg):
-    self.platform.install(pkg)
+  def localinstall(self, pkg):
+    self.platform.localinstall(pkg)
+
 
 class Nodes():
   def __init__(self):
@@ -71,26 +94,46 @@ class Nodes():
     os.system('cp ' + __file__ + ' ' + tmp_dir)
     for n in self.raw_data:
       self.nodes.append(n['fqdn'].split('.')[0])
-      os.system('scp -o "StrictHostKeyChecking no" -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + tmp_dir)
+      #distribute self and mine data
+      os.system('scp -o "StrictHostKeyChecking no" -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + re.sub('[^/]*/$','',tmp_dir))
 
-  def runon_roles(self, role='ALL', async=False, timeout=120, *args):
-    
-  def runon_node(self, node, async=False, timeout=120, *args):
+  def runon_roles(self, cmd, role='ALL', async=False, timeout=120):
+    pass
+
+  def runon_node(self, node, cmd, async=False, timeout=120):
     if not node in self.nodes:
       return False
     else:
-      os.system('ssh -o "StrictHostKeyChecking no" ' + tmp_dir + ' ' + args)
-  def run_any2any(self, role='ALL', async=False, timeout=120, *args)
+      print 'ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + tmp_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\''
+      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + tmp_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'')
+
+  def run_any2any(self, cmd, role='ALL', async=False, timeout=120):
     print lol
 
+  def get_fromnode(self, node, target):
+    pass
+
+  def get_fromrole(self, role, target):
+    pass
+
+
 #me = Platform()
-#me.install("atop")
+#me.localinstall("atop")
 
 if len(sys.argv) == 1:
 #i'm controller
   extract()
   pool = Nodes()
-  print pool.nodes
+  pool.runon_node(node='node-9', cmd="ls /tmp/")
+  #print pool.nodes
 else:
 #i'm target
   b = Buildins()
+  print sys.argv
+  #call = getattr(b,sys.argv[1])
+  #import pdb; pdb.set_trace()
+  #call(sys.argv[2:])
+  if sys.argv[1] == 'simplecmd':
+    b.simplecmd(sys.argv[2],sys.argv[3])
+  if sys.argv[1] == 'localinstall':
+    b.simplecmd(sys.argv[2],sys.argv[3])
