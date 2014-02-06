@@ -3,6 +3,7 @@ import os
 import commands
 import json
 import tempfile
+import sys
 
 class Platform():
   def __init__(self):
@@ -74,9 +75,9 @@ class Nodes():
 
 if len(sys.argv) == 1:
 #i'm controller
-extract()
-pool = Nodes()
-print pool.nodes
+  extract()
+  pool = Nodes()
+  print pool.nodes
 else:
 #i'm target
-b = Buildins()
+  b = Buildins()
