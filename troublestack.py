@@ -61,14 +61,27 @@ class Buildins():
   def simplecmd(self, *args):
     print 'going to run', args
 
+  def install(self, pkg):
+    self.platform.install(pkg)
+
 class Nodes():
   def __init__(self):
     self.raw_data = json.loads(commands.getoutput('fuel --json node'))
     self.nodes = []
     os.system('cp ' + __file__ + ' ' + tmp_dir)
     for n in self.raw_data:
-      self.nodes.append(n['fqdn'])
-      print 'scp -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + tmp_dir
+      self.nodes.append(n['fqdn'].split('.')[0])
+      os.system('scp -o "StrictHostKeyChecking no" -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + tmp_dir)
+
+  def runon_roles(self, role='ALL', async=False, timeout=120, *args):
+    
+  def runon_node(self, node, async=False, timeout=120, *args):
+    if not node in self.nodes:
+      return False
+    else:
+      os.system('ssh -o "StrictHostKeyChecking no" ' + tmp_dir + ' ' + args)
+  def run_any2any(self, role='ALL', async=False, timeout=120, *args)
+    print lol
 
 #me = Platform()
 #me.install("atop")
