@@ -11,9 +11,9 @@ echo 'basefile = {}' >> ${target}
 chmod oug+x "${target}"
 
 
-for f in ./files/* ; do
-  fn=`basename ${f}`
-  line="basefile['${fn}']"
+for f in `find ./files/ -type f` ; do
+  #fn=`basename ${f}`
+  line="basefile['${f}']"
   line="${line}=\"\"\"`base64 ${f}`\"\"\""
   echo "${line}" >> "${target}"
 done

@@ -25,6 +25,12 @@ class Platform():
       return "dpkg -i"
     elif self.getfamily() == "redhat":
       return "rpm -ivh"
+
+  def pkgdefaultprovider(self):
+    if self.getfamily() == "debian":
+      return "apt-get -y --assume-yes install"
+    elif self.getfamily() == "redhat":
+      return "yum -y install"
   
   def getpkgarch(self):
     if re.search('64', self.raw_data['kernel']['machine'], re.IGNORECASE):
@@ -53,7 +59,12 @@ class Platform():
       return "debian"
 
   def localinstall(self, pkg):
-    install_cmd=self.pkglocalprovider() + ' ' + tmp_dir + pkg + '*' + self.getpkgarch() + '*.' + self.getpkgextension()
+    install_cmd=self.pkglocalprovider() + ' ' + file_dir + pkg + '*' + self.getpkgarch() + '*.' + self.getpkgextension()
+    if not os.system(install_cmd) == 0:
+      print install_cmd, 'failed'
+
+  def defaultinstall(self, pkg):
+    install_cmd=self.pkgdefaultprovider() + ' ' + pkg
     if not os.system(install_cmd) == 0:
       print install_cmd, 'failed'
 
@@ -82,8 +93,11 @@ class Buildins():
     except Alarm:
      logfd.write(str(cmd) + ' exceed timeout ' + timeout)
      logfd.close()
-
+    print "done"
   def localinstall(self, pkg):
+    self.platform.localinstall(pkg)
+
+  def defaultinstall(self, pkg):
     self.platform.localinstall(pkg)
 
 
@@ -91,11 +105,15 @@ class Nodes():
   def __init__(self):
     self.raw_data = json.loads(commands.getoutput('fuel --json node'))
     self.nodes = []
-    os.system('cp ' + __file__ + ' ' + tmp_dir)
+    self.roles = []
+    os.system('cp ' + __file__ + ' ' + file_dir)
     for n in self.raw_data:
       self.nodes.append(n['fqdn'].split('.')[0])
+      for r in n['roles']:
+        if not r in self.roles:
+          self.roles.append(r)
       #distribute self and mine data
-      os.system('scp -o "StrictHostKeyChecking no" -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + re.sub('[^/]*/$','',tmp_dir))
+      os.system('scp -q -o "StrictHostKeyChecking no" -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + re.sub('[^/]*/$','',tmp_dir))
 
   def runon_roles(self, cmd, role='ALL', async=False, timeout=120):
     pass
@@ -104,10 +122,25 @@ class Nodes():
     if not node in self.nodes:
       return False
     else:
-      print 'ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + tmp_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\''
-      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + tmp_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'')
+      print 'ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\''
+      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'')
 
-  def run_any2any(self, cmd, role='ALL', async=False, timeout=120):
+  def localinstall(self, node, pkg):
+    if not node in self.nodes:
+      return False
+    else:
+      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' localinstall ' + ' "' + pkg + '"\'')
+
+  def defaultinstall(self, node, pkg):
+    if not node in self.nodes:
+      return False
+    else:
+      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' defaultinstall ' + ' "' + pkg + '"\'')
+
+  def run_one2one(self, cmd_from, cmd_to, role_from='ALL', role_to='ALL', async=False, timeout=120):
+    print lol
+
+  def run_one2any(self, cmd_from, cmd_to, role_from='ALL', role_to='ALL', async=False, timeout=120):
     print lol
 
   def get_fromnode(self, node, target):
@@ -124,8 +157,9 @@ if len(sys.argv) == 1:
 #i'm controller
   extract()
   pool = Nodes()
-  pool.runon_node(node='node-9', cmd="ls /tmp/")
-  #print pool.nodes
+  pool.defaultinstall(node='node-9', pkg='tcpdump')
+  pool.runon_node(node='node-9', cmd="tcpdump -n -i any", timeout=10)
+  print pool.roles
 else:
 #i'm target
   b = Buildins()
@@ -136,4 +170,6 @@ else:
   if sys.argv[1] == 'simplecmd':
     b.simplecmd(sys.argv[2],sys.argv[3])
   if sys.argv[1] == 'localinstall':
-    b.simplecmd(sys.argv[2],sys.argv[3])
+    b.localinstall(sys.argv[2])
+  if sys.argv[1] == 'defaultinstall':
+    b.defaultinstall(sys.argv[2])
