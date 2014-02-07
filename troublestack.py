@@ -98,7 +98,7 @@ class Buildins():
     self.platform.localinstall(pkg)
 
   def defaultinstall(self, pkg):
-    self.platform.localinstall(pkg)
+    self.platform.defaultinstall(pkg)
 
 
 class Nodes():
