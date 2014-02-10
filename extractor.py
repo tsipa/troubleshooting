@@ -10,6 +10,7 @@ target_dir = tmp_dir + '/target/'
 file_dir = tmp_dir + '/files/'
 def extract():
   try:
+    os.system('rm -rf ' + tmp_dir)
     os.mkdir(tmp_dir)
   except:
     pass
@@ -23,6 +24,6 @@ def extract():
       os.makedirs(dir)
     except:
       pass
-    fd = open(tmp_dir + f, 'w')
-    fd.write(base64.b64decode(basefile[f]))
+    fd = os.fdopen(os.open(tmp_dir + f, os.O_WRONLY | os.O_CREAT, int(basefile[f]['mode'], 8)), 'w')
+    fd.write(base64.b64decode(basefile[f]['content']))
     fd.close()

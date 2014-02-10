@@ -7,12 +7,48 @@ import sys
 import subprocess
 import threading
 import signal
+import time
 
 class Alarm(Exception):
     pass
 
 def alarm_handler(signum, frame):
     raise Alarm
+
+def run_cmd(cmd, timeout=0, logged=True, async=False):
+  if async:
+    pid = os.fork()
+  if (async and pid == 0) or not async:
+    logfile = re.sub('[^a-zA-Z0-9]', '_', cmd)
+    if logged:
+      logfd = open(target_dir + logfile, 'w')
+    else:
+      logfd = open('/dev/null', 'w')
+    print "going to run", cmd, "with timeout", timeout, " async =", async, " logged =", logged
+    running = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=logfd, shell=True, preexec_fn=os.setsid)
+    signal.signal(signal.SIGALRM, alarm_handler)
+    signal.alarm(int(timeout))
+    try:
+      errcode = running.wait()
+      signal.alarm(0)
+      logfd.write(str(cmd) + ' exit with ' + str(errcode))
+    except Alarm:
+      logfd.write(str(cmd) + ' exceed timeout ' + str(timeout))
+      os.killpg(running.pid, signal.SIGTERM)
+      signal.alarm(10)
+      try:
+        running.wait()
+        signal.alarm(0)
+      except Alarm:
+        os.killpg(running.pid, signal.SIGKILL)
+        logfd.write(str(cmd) + ' was killed with -9')
+        signal.alarm(0)
+    logfd.close()
+    if async:
+      os._exit(0)
+  else:
+    return pid
+
 
 class Platform():
   def __init__(self):
@@ -79,21 +115,8 @@ class Buildins():
     #print(self.hostname)
 
   def simplecmd(self, timeout, cmd):
-    print 'going to run', cmd, timeout
-    logfile = re.sub('[^a-zA-Z0-9]', '_', cmd)
-    logfd = open(target_dir + logfile,'w')
-    running = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=logfd, shell=True)
-    signal.signal(signal.SIGALRM, alarm_handler)
-    signal.alarm(int(timeout))
-    try:
-      errcode = running.wait()
-      signal.alarm(0)
-      logfd.write(str(cmd) + ' exit with ' + str(errcode))
-      logfd.close()
-    except Alarm:
-     logfd.write(str(cmd) + ' exceed timeout ' + timeout)
-     logfd.close()
-    print "done"
+    run_cmd(cmd, timeout=timeout)
+
   def localinstall(self, pkg):
     self.platform.localinstall(pkg)
 
@@ -106,6 +129,10 @@ class Nodes():
     self.raw_data = json.loads(commands.getoutput('fuel --json node'))
     self.nodes = []
     self.roles = []
+    self.to_wait = {}
+    self.to_kill = []
+    # i dunno how to do it properly, but when __del__ is executed there is no global vars and functions
+    self.tmp_dir = tmp_dir
     os.system('cp ' + __file__ + ' ' + file_dir)
     for n in self.raw_data:
       self.nodes.append(n['fqdn'].split('.')[0])
@@ -113,7 +140,58 @@ class Nodes():
         if not r in self.roles:
           self.roles.append(r)
       #distribute self and mine data
-      os.system('scp -q -o "StrictHostKeyChecking no" -r ' + tmp_dir + ' ' + n['fqdn'] + ':' + re.sub('[^/]*/$','',tmp_dir))
+      os.system('scp -q -o "StrictHostKeyChecking no" -r ' + self.tmp_dir + ' ' + n['fqdn'] + ':' + re.sub('[^/]*/$','',self.tmp_dir))
+
+  def __del__(self):
+
+    #wait while all running processes with limited timeout will end
+    if len(self.to_wait) != 0:
+      print 'Waiting for pids:', self.to_wait
+    while len(self.to_wait) != 0:
+      for pid in self.to_wait.keys():
+        try:
+          os.waitpid(pid,os.WNOHANG)
+          os.kill(pid,0)
+          if time.time() > self.to_wait[pid]:
+            del self.to_wait.pop[pid]
+            self.to_kill.append(pid)
+        except:
+          del self.to_wait[pid]
+      time.sleep(1)
+
+    #kill all unlimited processes
+    print 'Going to kill with SIGTERM pids:', self.to_kill
+    for pid in self.to_kill:
+      try:
+        print "killing", pid
+        os.killpg(pid, signal.SIGTERM)
+      except:
+        pass
+
+    #kill all processes forcefully
+    time.sleep(5)
+    for pid in self.to_kill:
+      try:
+        print "getting", pid
+        os.waitpid(pid,os.WNOHANG)
+        os.kill(pid,0)
+        print "got", pid
+      except:
+        self.to_kill.remove(pid)
+        pass
+
+    print 'Going to kill with SIGKILL pids:', self.to_kill
+    for pid in self.to_kill:
+      try:
+        os.killpg(pid, signal.SIGKILL)
+      except:
+        pass
+    
+
+    #gather all logs from all nodes
+    #for n in self.nodes:
+    #  os.system('ssh -o "StrictHostKeyChecking no" ' + n + ' rm -rf ' + self.tmp_dir)
+
 
   def runon_roles(self, cmd, role='ALL', async=False, timeout=120):
     pass
@@ -122,26 +200,33 @@ class Nodes():
     if not node in self.nodes:
       return False
     else:
-      print 'ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\''
-      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'')
+      if timeout == 0:
+        pid = run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'', timeout=timeout, logged=False, async=async)
+        if async:
+          self.to_kill.append(pid)
+      else:
+        pid = run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'', timeout=timeout + 10, logged=False, async=async)
+        if async:
+          print "cmd =",cmd,"pid =",pid,"time =",time.time() + timeout + 10
+          self.to_wait[pid] = time.time() + timeout + 10
 
   def localinstall(self, node, pkg):
     if not node in self.nodes:
       return False
     else:
-      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' localinstall ' + ' "' + pkg + '"\'')
+      run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' localinstall ' + ' "' + pkg + '"\'', logged=False)
 
   def defaultinstall(self, node, pkg):
     if not node in self.nodes:
       return False
     else:
-      os.system('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' defaultinstall ' + ' "' + pkg + '"\'')
+      run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' defaultinstall ' + ' "' + pkg + '"\'', logged=False)
 
   def run_one2one(self, cmd_from, cmd_to, role_from='ALL', role_to='ALL', async=False, timeout=120):
-    print lol
+    print "lol"
 
   def run_one2any(self, cmd_from, cmd_to, role_from='ALL', role_to='ALL', async=False, timeout=120):
-    print lol
+    print "lol"
 
   def get_fromnode(self, node, target):
     pass
@@ -158,12 +243,12 @@ if len(sys.argv) == 1:
   extract()
   pool = Nodes()
   pool.defaultinstall(node='node-9', pkg='tcpdump')
-  pool.runon_node(node='node-9', cmd="tcpdump -n -i any", timeout=10)
-  print pool.roles
+  pool.localinstall(node='node-9', pkg='atop')
+  pool.runon_node(node='node-9', cmd="tcpdump -n -i any", timeout=0, async=True)
 else:
 #i'm target
   b = Buildins()
-  print sys.argv
+  #print sys.argv
   #call = getattr(b,sys.argv[1])
   #import pdb; pdb.set_trace()
   #call(sys.argv[2:])
