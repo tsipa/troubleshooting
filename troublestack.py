@@ -8,6 +8,8 @@ import subprocess
 import threading
 import signal
 import time
+import atexit
+
 
 class Alarm(Exception):
     pass
@@ -15,39 +17,131 @@ class Alarm(Exception):
 def alarm_handler(signum, frame):
     raise Alarm
 
-def run_cmd(cmd, timeout=0, logged=True, async=False):
-  if async:
-    pid = os.fork()
-  if (async and pid == 0) or not async:
-    logfile = re.sub('[^a-zA-Z0-9]', '_', cmd)
-    if logged:
-      logfd = open(target_dir + logfile, 'w')
-    else:
-      logfd = open('/dev/null', 'w')
-    print "going to run", cmd, "with timeout", timeout, " async =", async, " logged =", logged
-    running = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=logfd, shell=True, preexec_fn=os.setsid)
-    signal.signal(signal.SIGALRM, alarm_handler)
-    signal.alarm(int(timeout))
-    try:
-      errcode = running.wait()
-      signal.alarm(0)
-      logfd.write(str(cmd) + ' exit with ' + str(errcode))
-    except Alarm:
-      logfd.write(str(cmd) + ' exceed timeout ' + str(timeout))
-      os.killpg(running.pid, signal.SIGTERM)
-      signal.alarm(10)
+def cleanup(*args):
+  print "cleanin"
+  executor.clean()
+  time.sleep(10)
+  try:
+    pool.clean()
+  except:
+    pass
+
+signal.signal(signal.SIGTERM, cleanup)
+signal.signal(signal.SIGINT, cleanup)
+signal.signal(signal.SIGHUP, cleanup)
+atexit.register(cleanup)
+
+class Executor():
+  def __init__(self):
+    self.to_wait = {}
+    self.to_kill = []
+
+  def clean(self):
+    #wait while all running processes with limited timeout will end
+    if len(self.to_wait) != 0:
+      print 'Waiting for pids:', self.to_wait
+    while len(self.to_wait) != 0:
+      for pid in self.to_wait.keys():
+        try:
+          os.waitpid(pid,os.WNOHANG)
+          os.kill(pid,0)
+          if time.time() > self.to_wait[pid]:
+            del self.to_wait[pid]
+            self.to_kill.append(pid)
+        except:
+          del self.to_wait[pid]
+      time.sleep(1)
+
+    #kill all unlimited processes
+    print 'Going to kill with SIGTERM pids:', self.to_kill
+    for pid in self.to_kill:
       try:
-        running.wait()
-        signal.alarm(0)
-      except Alarm:
-        os.killpg(running.pid, signal.SIGKILL)
-        logfd.write(str(cmd) + ' was killed with -9')
-        signal.alarm(0)
-    logfd.close()
+        print "killing", pid
+        print "pgid = ", os.getpgid(pid)
+        #time.sleep(30)
+        os.killpg(pid, signal.SIGTERM)
+      except:
+        pass
+
+    #kill all processes forcefully
+    time.sleep(5)
+    for pid in self.to_kill:
+      try:
+        print "getting", pid
+        os.waitpid(pid,os.WNOHANG)
+        os.kill(pid,0)
+        print "got", pid
+      except:
+        self.to_kill.remove(pid)
+        pass
+
+    print 'Going to kill with SIGKILL pids:', self.to_kill
+    for pid in self.to_kill:
+      try:
+        os.killpg(pid, signal.SIGKILL)
+      except:
+        pass
+
+
+
+  def run_cmd(self, cmd, timeout=0, logged=True, async=False):
     if async:
-      os._exit(0)
-  else:
-    return pid
+      pid = os.fork()
+      if pid != 0:
+        if timeout != 0:
+          print "Will wait for pid", pid, "for", timeout
+          self.to_wait[pid] = time.time() + int(timeout) + 10
+        else:
+          self.to_kill.append(pid)
+    if (async and pid == 0) or not async:
+      if async:
+        self.to_wait = {}
+        self.to_kill = []
+        os.setsid()
+      print "going to run", cmd, "with timeout", timeout, " async =", async, " logged =", logged
+
+      logfile = re.sub('[^a-zA-Z0-9]', '_', cmd)
+      if logged:
+        logfd = open(target_dir + logfile, 'w')
+      else:
+        logfd = open('/dev/null', 'w')
+
+      running = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=logfd, shell=True, preexec_fn=os.setsid)
+      subpid = running.pid
+      if int(timeout) == 0: 
+        print "Will kill subpid", subpid
+        self.to_kill.append(subpid)
+      else:
+        print "Will wait for subpid", subpid, "for", timeout
+        self.to_wait[subpid] = time.time() + int(timeout) + 10
+      
+      signal.signal(signal.SIGALRM, alarm_handler)
+      signal.alarm(int(timeout))
+      try:
+        errcode = running.wait()
+        logfd.write(str(cmd) + ' exit with ' + str(errcode))
+      except Alarm:
+        logfd.write(str(cmd) + ' exceed timeout ' + str(timeout))
+        os.killpg(subpid, signal.SIGTERM)
+        signal.alarm(10)
+        try:
+          running.wait()
+        except Alarm:
+          os.killpg(subpid, signal.SIGKILL)
+          logfd.write(str(cmd) + ' was killed with -9')
+        except OSError:
+          pass
+      except OSError:
+        pass
+
+      logfd.close()
+      signal.alarm(0)
+      if timeout == 0:
+        self.to_kill.remove(subpid)
+      else:
+        del self.to_wait[subpid]
+      if async:
+        os._exit(0)
 
 
 class Platform():
@@ -106,8 +200,9 @@ class Platform():
 
 
 class Buildins():
-  def __init__(self):
+  def __init__(self, executor):
     self.platform = Platform()
+    self.executor = executor
     if os.path.isfile('/etc/fuel-uuid'):
       self.hostname = 'localhost'
     else:
@@ -115,7 +210,7 @@ class Buildins():
     #print(self.hostname)
 
   def simplecmd(self, timeout, cmd):
-    run_cmd(cmd, timeout=timeout)
+    self.executor.run_cmd(cmd, timeout=int(timeout))
 
   def localinstall(self, pkg):
     self.platform.localinstall(pkg)
@@ -125,12 +220,11 @@ class Buildins():
 
 
 class Nodes():
-  def __init__(self):
+  def __init__(self, executor):
     self.raw_data = json.loads(commands.getoutput('fuel --json node'))
     self.nodes = []
     self.roles = []
-    self.to_wait = {}
-    self.to_kill = []
+    self.executor = executor
     # i dunno how to do it properly, but when __del__ is executed there is no global vars and functions
     self.tmp_dir = tmp_dir
     os.system('cp ' + __file__ + ' ' + file_dir)
@@ -142,55 +236,11 @@ class Nodes():
       #distribute self and mine data
       os.system('scp -q -o "StrictHostKeyChecking no" -r ' + self.tmp_dir + ' ' + n['fqdn'] + ':' + re.sub('[^/]*/$','',self.tmp_dir))
 
-  def __del__(self):
-
-    #wait while all running processes with limited timeout will end
-    if len(self.to_wait) != 0:
-      print 'Waiting for pids:', self.to_wait
-    while len(self.to_wait) != 0:
-      for pid in self.to_wait.keys():
-        try:
-          os.waitpid(pid,os.WNOHANG)
-          os.kill(pid,0)
-          if time.time() > self.to_wait[pid]:
-            del self.to_wait.pop[pid]
-            self.to_kill.append(pid)
-        except:
-          del self.to_wait[pid]
-      time.sleep(1)
-
-    #kill all unlimited processes
-    print 'Going to kill with SIGTERM pids:', self.to_kill
-    for pid in self.to_kill:
-      try:
-        print "killing", pid
-        os.killpg(pid, signal.SIGTERM)
-      except:
-        pass
-
-    #kill all processes forcefully
-    time.sleep(5)
-    for pid in self.to_kill:
-      try:
-        print "getting", pid
-        os.waitpid(pid,os.WNOHANG)
-        os.kill(pid,0)
-        print "got", pid
-      except:
-        self.to_kill.remove(pid)
-        pass
-
-    print 'Going to kill with SIGKILL pids:', self.to_kill
-    for pid in self.to_kill:
-      try:
-        os.killpg(pid, signal.SIGKILL)
-      except:
-        pass
-    
-
+  def clean(self):
     #gather all logs from all nodes
-    #for n in self.nodes:
-    #  os.system('ssh -o "StrictHostKeyChecking no" ' + n + ' rm -rf ' + self.tmp_dir)
+    for n in self.nodes:
+      print "Cleaning", n
+    #  os.system('ssh -t -o "StrictHostKeyChecking no" ' + n + ' rm -rf ' + self.tmp_dir)
 
 
   def runon_roles(self, cmd, role='ALL', async=False, timeout=120):
@@ -201,26 +251,21 @@ class Nodes():
       return False
     else:
       if timeout == 0:
-        pid = run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'', timeout=timeout, logged=False, async=async)
-        if async:
-          self.to_kill.append(pid)
+        self.executor.run_cmd('ssh -t -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'', timeout=timeout, logged=True, async=async)
       else:
-        pid = run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'', timeout=timeout + 10, logged=False, async=async)
-        if async:
-          print "cmd =",cmd,"pid =",pid,"time =",time.time() + timeout + 10
-          self.to_wait[pid] = time.time() + timeout + 10
+        self.executor.run_cmd('ssh -t -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd + '"\'', timeout=timeout + 10, logged=False, async=async)
 
   def localinstall(self, node, pkg):
     if not node in self.nodes:
       return False
     else:
-      run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' localinstall ' + ' "' + pkg + '"\'', logged=False)
+      self.executor.run_cmd('ssh -t -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' localinstall ' + ' "' + pkg + '"\'', logged=False)
 
   def defaultinstall(self, node, pkg):
     if not node in self.nodes:
       return False
     else:
-      run_cmd('ssh -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' defaultinstall ' + ' "' + pkg + '"\'', logged=False)
+      self.executor.run_cmd('ssh -t -o "StrictHostKeyChecking no" ' + node + ' \'' + file_dir + __file__ + ' defaultinstall ' + ' "' + pkg + '"\'', logged=False)
 
   def run_one2one(self, cmd_from, cmd_to, role_from='ALL', role_to='ALL', async=False, timeout=120):
     print "lol"
@@ -238,16 +283,18 @@ class Nodes():
 #me = Platform()
 #me.localinstall("atop")
 
+executor = Executor()
+
 if len(sys.argv) == 1:
 #i'm controller
   extract()
-  pool = Nodes()
+  pool = Nodes(executor)
   pool.defaultinstall(node='node-9', pkg='tcpdump')
   pool.localinstall(node='node-9', pkg='atop')
-  pool.runon_node(node='node-9', cmd="tcpdump -n -i any", timeout=0, async=True)
+  pool.runon_node(node='node-9', cmd="tcpdump -n -i any", timeout=20, async=True)
 else:
 #i'm target
-  b = Buildins()
+  b = Buildins(executor)
   #print sys.argv
   #call = getattr(b,sys.argv[1])
   #import pdb; pdb.set_trace()
@@ -258,3 +305,5 @@ else:
     b.localinstall(sys.argv[2])
   if sys.argv[1] == 'defaultinstall':
     b.defaultinstall(sys.argv[2])
+
+sys.exit()
