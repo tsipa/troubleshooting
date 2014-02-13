@@ -20,7 +20,7 @@ def alarm_handler(signum, frame):
 def cleanup(*args):
   print "Cleaning"
   executor.clean()
-  time.sleep(5)
+  time.sleep(1)
   try:
     pool.clean()
   except:
@@ -73,19 +73,19 @@ class Executor():
     #kill all unlimited processes
     for pid in self.to_kill:
       self.kill_single_term(pid)
-    time.sleep(2)
+    time.sleep(1)
     self.check_all_killed()
     for pid in self.to_kill:
       self.kill_single_kill(pid)
-    time.sleep(2)
+    time.sleep(1)
     self.check_all_killed()
 
   def kill_single(self,pid):
     self.kill_single_term(pid)
-    time.sleep(2)
+    time.sleep(1)
     self.check_all_killed()
     self.kill_single_kill(pid)
-    time.sleep(2)
+    time.sleep(1)
     self.check_all_killed()
 
   def kill_single_term(self, pid):
@@ -128,6 +128,9 @@ class Executor():
 
       logfile = re.sub('[^a-zA-Z0-9]', '_', cmd)
       if logged:
+        n = 0
+        while os.path.isfile(target_dir + logfile + str(n)):
+          n = n + 1
         logfd = open(target_dir + logfile, 'w')
       else:
         logfd = open('/dev/null', 'w')
@@ -406,6 +409,7 @@ def testpool(pool):
   pool.runon_node(node='node-9', cmd="sleep 5", timeout=999, async=False)
   ##timeout < sleep
   pool.runon_node(node='node-9', cmd="sleep 999", timeout=5, async=False)
+
   #async
   ##timeout 0
   pool.runon_node(node='node-9', cmd="sleep 10", timeout=0, async=True)
@@ -413,27 +417,43 @@ def testpool(pool):
   pool.runon_node(node='node-9', cmd="sleep 5", timeout=999, async=True)
   ##timeout < sleep
   pool.runon_node(node='node-9', cmd="sleep 999", timeout=5, async=True)
+
   #buildins
   pool.localinstall(node='node-9', pkg='atop')
   pool.defaultinstall(node='node-9', pkg='tcpdump')
+
+  ##one2one with timeout and output
+  pool.run_one2one(cmd_from='ping',cmd_to='tcpdump -n -i any host', role_from='all',role_to='all',timeout=30)
+  ##one2one with timeout > sleep
+  pool.run_one2one(cmd_from='sleep 10 ; echo',cmd_to='sleep 15; echo', role_from='all',role_to='all',timeout=999)
+  ##one2one with timeout < sleep
+  pool.run_one2one(cmd_from='sleep 999 ; echo',cmd_to='sleep 999; echo', role_from='all',role_to='all',timeout=30)
 
 executor = Executor()
 
 if len(sys.argv) == 1:
 #i'm controller
-  needed_files = ['/etc/openvswitch/', '/etc/nova/', '/etc/cinder/', '/etc/quantum/', '/etc/neutron/', '/etc/corosync/', '/var/log', ]
   extract()
   pool = Nodes(executor)
   #testpool(pool)
+
   contoller_mod_dir = file_dir + '/controller/'
   for file in os.listdir(contoller_mod_dir):
     execfile(contoller_mod_dir+file)
+
+  roles_dir = file_dir + '/checks/'
+  for role in os.listdir(roles_dir):
+    if not os.path.isdir(roles_dir + '/' + role):
+      continue
+    for file in os.listdir(roles_dir + '/' + role):
+      torun = roles_dir + '/' + role + '/' + file
+      pool.runon_role(role=role, cmd=torun, async=False, timeout=0)
+
   #pool.localinstall(node='node-9', pkg='atop')
   #pool.defaultinstall(node='node-9', pkg='tcpdump')
   #pool.localinstall(node='node-9', pkg='atop')
-  #pool.runonrole(role='all', cmd='atop -w ' + target_dir + '/atop.log 1 500', async=True, timeout=600, logged=False)
+  #pool.runon_role(role='all', cmd='atop -w ' + target_dir + '/atop.log 1 500', async=True, timeout=600, logged=False)
   #pool.runon_list(nodes=[ 'node-9', 'node-10' ], cmd="tcpdump -n -i any", timeout=10, async=True)
-  #pool.run_one2one(cmd_from='ping',cmd_to='tcpdump -n -i any host', role_from='all',role_to='all',timeout=0)
   #pool.get_fromnode('node-9', '/etc/hosts')
   #pool.get_fromrole('all', '/tmp')
 else:
