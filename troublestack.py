@@ -18,7 +18,7 @@ def alarm_handler(signum, frame):
     raise Alarm
 
 def cleanup(*args):
-  print "Cleaning"
+  #print "Cleaning"
   executor.clean()
   time.sleep(1)
   try:
@@ -63,8 +63,8 @@ class Executor():
 
   def check_for_waiting(self):
     #wait while all running processes with limited timeout will end
-    if len(self.to_wait) != 0:
-      print 'Waiting for pids:', self.to_wait
+    #if len(self.to_wait) != 0:
+    #  print 'Waiting for pids:', self.to_wait
     while len(self.to_wait) != 0:
       self.check_all_waiting()
       time.sleep(1)
@@ -110,11 +110,12 @@ class Executor():
       pass
 
   def run_cmd(self, cmd, timeout=0, logged=True, async=False, setsid=False):
+    #print "going to run", cmd, "with timeout", timeout, " async =", async, " logged =", logged
     if async:
       pid = os.fork()
       if pid != 0:
         if timeout != 0:
-          print "Will wait for pid", pid, "for", timeout
+          #print "Will wait for pid", pid, "for", timeout
           self.to_wait[pid] = time.time() + int(timeout) + 10
         else:
           self.to_kill.append(pid)
@@ -124,14 +125,13 @@ class Executor():
         self.to_wait = {}
         self.to_kill = []
         os.setsid()
-      print "going to run", cmd, "with timeout", timeout, " async =", async, " logged =", logged
 
       logfile = re.sub('[^a-zA-Z0-9]', '_', cmd)
       if logged:
         n = 0
         while os.path.isfile(target_dir + logfile + str(n)):
           n = n + 1
-        logfd = open(target_dir + logfile, 'w')
+        logfd = open(target_dir + logfile + str(n), 'w')
       else:
         logfd = open('/dev/null', 'w')
       if (not async) and (not setsid):
@@ -140,10 +140,10 @@ class Executor():
         running = subprocess.Popen(cmd, stderr=subprocess.STDOUT, stdout=logfd, shell=True, preexec_fn=os.setpgrp)
       subpid = running.pid
       if int(timeout) == 0: 
-        print "Will kill subpid", subpid
+        #print "Will kill subpid", subpid
         self.to_kill.append(subpid)
       else:
-        print "Will wait for subpid", subpid, "for", timeout
+        #print "Will wait for subpid", subpid, "for", timeout
         self.to_wait[subpid] = time.time() + int(timeout) + 10
       signal.signal(signal.SIGALRM, alarm_handler)
       signal.alarm(int(timeout))
@@ -220,13 +220,11 @@ class Platform():
 
   def localinstall(self, pkg):
     install_cmd=self.pkglocalprovider() + ' ' + file_dir + pkg + '*' + self.getpkgarch() + '*.' + self.getpkgextension()
-    if not os.system(install_cmd) == 0:
-      print install_cmd, 'failed'
+    os.system(install_cmd)
 
   def defaultinstall(self, pkg):
     install_cmd=self.pkgdefaultprovider() + ' ' + pkg
-    if not os.system(install_cmd) == 0:
-      print install_cmd, 'failed'
+    os.system(install_cmd)
 
 
 class Buildins():
@@ -366,7 +364,7 @@ class Nodes():
           pid_to = self.executor.run_cmd('ssh -t -o "StrictHostKeyChecking no" ' + node_to + ' \'' + file_dir + __file__ + ' simplecmd ' + str(timeout) + ' "' + cmd_to + ' ' + node_from + '"\'', timeout=timeout + 10, logged=True, async=True)
         pids.append(pid_from)
         pids.append(pid_to)
-      print "Polling", pids
+      #print "Polling", pids
       if not async:
         while len(pids) != 0:
           for pid in pids:
