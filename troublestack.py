@@ -110,7 +110,7 @@ class Executor():
       pass
 
   def run_cmd(self, cmd, timeout=0, logged=True, async=False, setsid=False):
-    print "going to run", cmd, "with timeout", timeout, " async =", async, " logged =", logged
+    #print "going to run", cmd, "with timeout", timeout, " async =", async, " logged =", logged
     if async:
       pid = os.fork()
       if pid != 0:
