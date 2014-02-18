@@ -6,4 +6,8 @@ for n in range(0, 100):
   pool.runon_role(role='controller', cmd='crm status', async=True, timeout=300)
   pool.runon_role(role='controller', cmd='rabbitmqctl cluster_status', async=True, timeout=300)
   pool.runon_role(role='controller', cmd='rabbitmqctl list_queues', async=True, timeout=300)
+  pool.runon_role(role='controller', cmd='echo SHOW STATUS | mysql -u root', async=True, timeout=300)
+  pool.runon_role(role='controller', cmd='echo SHOW ENGINE INNODB STATUS | mysql -u root', async=True, timeout=300)
+  pool.runon_role(role='controller', cmd='echo SHOW VARIABLES | mysql -u root', async=True, timeout=300)
+  pool.runon_role(role='controller', cmd='echo SHOW FULL PROCESSLIST | mysql -u root', async=True, timeout=300)  
   time.sleep(5)

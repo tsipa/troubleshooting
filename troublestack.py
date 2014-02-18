@@ -268,10 +268,13 @@ class Nodes():
   def clean(self):
     #gather all logs from all nodes
     for n in self.nodes:
-      print "Cleaning", n
+      #print "Cleaning", n
       self.get_fromrole('all',self.target_dir)
       os.system('ssh -t -o "StrictHostKeyChecking no" ' + n + ' rm -rf ' + self.tmp_dir)
-
+    ts = time.time()
+    print 'Result will be available at /tmp/troublestack_' + str(ts) + '.tar.bz2'
+    os.system('tar cjf /tmp/troublestack_' + str(ts) + '.tar.bz2 ' + self.target_dir)
+    os.system('rm -rf ' + self.tmp_dir)
 
   def runon_role(self, cmd, role='all', async=False, timeout=120):
     nodes = self.role2nodes(role)
@@ -445,7 +448,7 @@ if len(sys.argv) == 1:
       continue
     for file in os.listdir(roles_dir + '/' + role):
       torun = roles_dir + '/' + role + '/' + file
-      pool.runon_role(role=role, cmd=torun, async=False, timeout=0)
+      pool.runon_role(role=role, cmd=torun, async=False, timeout=900)
 
   #pool.localinstall(node='node-9', pkg='atop')
   #pool.defaultinstall(node='node-9', pkg='tcpdump')
