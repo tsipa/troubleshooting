@@ -1,3 +1,3 @@
-needed_files = ['/etc/openvswitch/', '/etc/nova/', '/etc/cinder/', '/etc/quantum/', '/etc/neutron/', '/etc/corosync/', '/var/log/', '/etc/my.cnf', '/etc/mysql/' ]
+needed_files = ['/etc/openvswitch/', '/etc/corosync/', '/var/log/', '/etc/my.cnf', '/etc/mysql/', '/etc/fuel-uuid', '/etc/naily.facts', '/etc/nailgun/', '/etc/naily/', '/etc/haproxy/' ]
 for file in needed_files:
   pool.get_fromrole('all', file)
