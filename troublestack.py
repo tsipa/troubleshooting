@@ -258,7 +258,10 @@ class Nodes():
     self.target_dir = target_dir
     os.system('cp ' + __file__ + ' ' + file_dir)
     for n in self.raw_data:
-      self.nodes.append(n['fqdn'].split('.')[0])
+      if n['fqdn'] != None:
+        self.nodes.append(n['fqdn'].split('.')[0])
+      else:
+        self.nodes.append(n['ip'])
       for r in n['roles']:
         if not r in self.roles:
           self.roles.append(r)
@@ -346,7 +349,10 @@ class Nodes():
     nodes = []
     for n in self.raw_data:
       if role in n['roles'] or role == 'all':
-        nodes.append(n['fqdn'].split('.')[0])
+        if n['fqdn'] != None:
+          nodes.append(n['fqdn'].split('.')[0])
+        else:
+          nodes.append(n['ip'])
     return nodes
         
 
