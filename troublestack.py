@@ -259,14 +259,15 @@ class Nodes():
     os.system('cp ' + __file__ + ' ' + file_dir)
     for n in self.raw_data:
       if n['fqdn'] != None:
-        self.nodes.append(n['fqdn'].split('.')[0])
+        n_name = n['fqdn'].split('.')[0]
       else:
-        self.nodes.append(n['ip'])
+        n_name = n['ip']
+      self.nodes.append(n_name)
       for r in n['roles']:
         if not r in self.roles:
           self.roles.append(r)
       #distribute self and mine data
-      os.system('scp -q -o "StrictHostKeyChecking no" -r ' + self.tmp_dir + ' ' + n['fqdn'] + ':' + re.sub('[^/]*/$','',self.tmp_dir))
+      os.system('scp -q -o "StrictHostKeyChecking no" -r ' + self.tmp_dir + ' ' + n_name + ':' + re.sub('[^/]*/$','',self.tmp_dir))
 
   def clean(self):
     #gather all logs from all nodes
