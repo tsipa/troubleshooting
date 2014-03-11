@@ -3,7 +3,7 @@ troubleshooting
 Cloud Information collector
 
 **1. Introduction**
-
+--------------
 After the cloud is being operational, we need to transmit complete information about 
 a cloud to the support team. During the support of the customer installation 
 a lot of debug information is required, it is not easy to predict which information 
@@ -11,12 +11,12 @@ will be required on next step, and it is impossible to get manually all necessar
 information in advance either.
 
 **2. Purpose**
-
+--------------
 We need automation tool which will be able to collect all necessary information about 
 cloud in one step to provide the “Support Team” with the collected information.
 
 **3. Scope**
-
+--------------
 This software is intended to be utility that collects all possible information. 
 It is designed only to provide necessary information to the “Support Team” to understand 
 root of the issue and make adequate decision on how to fix it.
