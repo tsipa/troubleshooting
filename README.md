@@ -1,4 +1,3 @@
-1
 Cloud Information collector
 ===============
 
