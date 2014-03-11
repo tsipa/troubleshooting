@@ -1,6 +1,5 @@
-troubleshooting
-===============
 Cloud Information collector
+===============
 
 **1. Introduction**
 --------------
