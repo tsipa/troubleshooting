@@ -13,7 +13,7 @@ chmod oug+x "${target}"
 
 for f in `find ./files/ -type f` ; do
   #fn=`basename ${f}`
-  mode=`stat -c %a ${f}`
+  mode=`./stat.py ${f}`
   line="basefile['${f}']={"
   line="${line}\"mode\":\"${mode}\","
   line="${line}\"content\":\"\"\"`base64 ${f}`\"\"\""
